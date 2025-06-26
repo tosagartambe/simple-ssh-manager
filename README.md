@@ -1,6 +1,6 @@
-===========================================
+====================
  Simple SSH Manager
-===========================================
+====================
 
 A simple, cross-platform Python tool to manage SSH host configs and port forwarding using your ~/.ssh/config file.
 
