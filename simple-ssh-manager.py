@@ -3,17 +3,38 @@ import sys
 import re
 import shutil
 import math
-import re
-
+import subprocess
+from getpass import getpass
 
 CONFIG_FILE = os.path.expanduser("~/.ssh/config")
-
 
 def ensure_config_file():
     os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
     if not os.path.exists(CONFIG_FILE):
         open(CONFIG_FILE, 'a').close()
 
+def is_encrypted_private_key(filepath):
+    """
+    Tries to extract the public key using ssh-keygen.
+    If it fails or prompts, the key is likely encrypted.
+    """
+    try:
+        result = subprocess.run(
+            ["ssh-keygen", "-y", "-f", filepath],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            input=b'\n',
+            timeout=5
+        )
+        if result.returncode != 0 or b"Enter passphrase" in result.stderr:
+            return True
+        return False
+    except Exception as e:
+        print(color(f"❌ Error checking key encryption: {e}", "91"))
+        return False
+
+def prompt_for_passphrase():
+    return getpass(color("🔑 Enter passphrase for key: ", "1;36"))
 
 def parse_config():
     config = {}
@@ -48,7 +69,6 @@ def parse_config():
             }
 
     return config
-
 def filter_by_tag():
     config = parse_config()
     tag_input = input(color("🔍 Enter tag to filter (e.g., dev): ", "1;36")).strip().lower()
@@ -78,12 +98,9 @@ def get_field(lines, field):
             return parts[1]
     return ""
 
-
-
 def input_with_default(prompt, default):
     val = input(f"{prompt} [{default}]: ").strip()
     return val or default
-
 
 def write_config(config):
     with open(CONFIG_FILE, 'w') as f:
@@ -91,7 +108,6 @@ def write_config(config):
             for line in lines:
                 f.write(line if line.endswith('\n') else line + '\n')
             f.write('\n')
-
 
 def add_or_update_host():
     config = parse_config()
@@ -132,7 +148,12 @@ def add_or_update_host():
         else:
             print(f"❌ IdentityFile '{identity_file_input}' does not exist. Please try again.")
 
-    # Prompt for tags
+    identity_file_expanded = os.path.expanduser(identity_file)
+    if os.path.isfile(identity_file_expanded):
+        if is_encrypted_private_key(identity_file_expanded):
+            _ = prompt_for_passphrase()
+            print(color("🔐 Key is encrypted. Make sure ssh-agent is running or you’ll be prompted again during SSH connection.", "93"))
+
     tag_input = input(f"Tags (comma separated) [{', '.join(old_tags) if old_tags else 'none'}]: ").strip()
     tags = [t.strip().lower() for t in tag_input.split(",") if t.strip()] if tag_input else old_tags
 
@@ -156,10 +177,6 @@ def add_or_update_host():
     # Write back only the lines
     write_config({h: d["lines"] for h, d in config.items()})
     print(f"✅ Host '{host}' {'updated' if is_update else 'added'} successfully.")
-
-
-
-
 
 def list_hosts():
     config = parse_config()
@@ -186,8 +203,6 @@ def list_hosts():
                 host = hosts[i]
                 line += color(host.ljust(max_length), "92")  # Green color
         print(line)
-
-
 
 def connect_to_host():
     config = parse_config()
@@ -272,9 +287,6 @@ def start_port_forwarding():
         os.system(f"ssh -N -L {local_port}:{remote_host}:{remote_port} {selected_host}")
     except KeyboardInterrupt:
         print(color("\n🛑 Port forwarding stopped by user.", "91"))
-
-
-
 
 
 def search_hosts():
